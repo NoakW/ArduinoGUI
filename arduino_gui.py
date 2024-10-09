@@ -27,7 +27,8 @@ def on_closing(arduinoConnected):
     
 def slider_callback(value):
     progressbar_1.set(value)
-    
+    pwm_value = int(value * 255)  # Scale to 0-255 for PWM
+    send_command(f"SET_PWM {pwm_value}")  # Send PWM command to Arduino
 
 # Set appearance and theme
 customtkinter.set_appearance_mode("dark")  # Mode
@@ -77,6 +78,8 @@ party_btn.pack(pady=10)
 window.protocol("WM_DELETE_WINDOW", lambda: on_closing(arduinoConnected))
 window.mainloop()
 
-# Detach arduino from prot
-#if arduinoConnected:
-#    arduino.close()
+
+
+
+
+
