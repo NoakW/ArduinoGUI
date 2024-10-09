@@ -19,10 +19,11 @@ def send_command(command):
         print(f"Error sending command: {e}")
 
 # Function to handle window closing
-def on_closing():
-    arduino.close()  # Close the serial connection
-    print("Serial port closed.")
-    window.destroy()  # Close the Tkinter window
+def on_closing(arduinoConnected):
+    if arduinoConnected:
+        arduino.close()  # Close the serial connection
+        print("Serial port closed.")
+        window.destroy()  # Close the Tkinter window
     
 def slider_callback(value):
     progressbar_1.set(value)
@@ -32,9 +33,11 @@ def slider_callback(value):
 customtkinter.set_appearance_mode("dark")  # Mode
 customtkinter.set_default_color_theme("dark-blue")  # Theme
 # Open the serial connection to Arduino, adjust COM port if needed)
+arduinoConnected = False;
 try:
     arduino = serial.Serial(port='COM3', baudrate=9600, timeout=1)
     print("Connected to Arduino.")
+    arduinoConnected = True;
 except Exception as e:
     print(f"Failed to connect to Arduino: {e}")
 
@@ -71,8 +74,9 @@ party_btn = customtkinter.CTkButton(master=frame, text="Party",command=lambda: s
 party_btn.pack(pady=10)
 
 # Code for closing window
-window.protocol("WM_DELETE_WINDOW", on_closing)
+window.protocol("WM_DELETE_WINDOW", lambda: on_closing(arduinoConnected))
 window.mainloop()
 
 # Detach arduino from prot
-arduino.close()
+#if arduinoConnected:
+#    arduino.close()
