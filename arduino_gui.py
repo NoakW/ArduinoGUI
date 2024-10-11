@@ -27,7 +27,7 @@ except Exception as e:
     
 def rpm_conv(value):
     approx_rpm = int(rpm_max * value)
-    if approx_rpm <= 40:
+    if approx_rpm <= 50:
         approx_rpm = 0
     return approx_rpm
     
@@ -37,7 +37,10 @@ def slider_callback(value):
     send_command(f"SET_PWM {pwm_value}")
     status_label.configure(text=f"RPM: {int(approx_rpm)}")# Send PWM command to Arduino
 
-
+def slider_callback2(value):
+    deg_value = int(180*value)
+    send_command(f"SET_SERVO {deg_value}")
+    
 def send_command(command):
     try:
         print(f"Sending command: {command}")
@@ -77,13 +80,16 @@ btn_on_red.pack(pady=10)
 btn_off_red = customtkinter.CTkButton(master=frame, text="Turn OFF Red LED", command=lambda: send_command("LOW_RED"))
 btn_off_red.pack(pady=10)
 
-rpm_slider = customtkinter.CTkSlider(master=window, command=slider_callback, from_=0, to=1)
-rpm_slider.pack(pady=12, padx=10)
+rpm_slider = customtkinter.CTkSlider(master=frame, command=slider_callback, from_=0, to=1)
+rpm_slider.pack(pady=40, padx=10)
 
-entry_1 = customtkinter.CTkEntry(master=frame,placeholder_text="HELLO")
+entry_1 = customtkinter.CTkEntry(master=frame,placeholder_text="Enter RPM")
 entry_1.pack(pady=12,padx=10)
 
-status_label = customtkinter.CTkLabel(master=frame, text="RPM: 0")
+slider2 = customtkinter.CTkSlider(master=frame, command=slider_callback2, from_=0, to=1)
+slider2.pack(pady=40, padx=10)
+
+status_label = customtkinter.CTkLabel(master=frame, text="Current RPM: 0")
 status_label.pack(pady=12, padx=10)
 
 # Code for closing window
