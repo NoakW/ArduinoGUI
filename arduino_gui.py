@@ -1,20 +1,333 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Thu Nov 14 09:24:58 2024
+@author: noakw
+"""
+
 import serial
 import time
-import customtkinter
+import customtkinter as ctk
 import sys
+from functions import validate_inputs
+from PIL import Image, ImageTk
 
-# Global variables
-rpm_max = 315
+cleaning_default = 100
+cycle_time = {"entry_value": cleaning_default} # Default cycle time
+
+def start_program(pwm_entry, time_entry, volume_entry, cycle_entry, cycle_time_value, status_label):
+    try:
+        pwm_value, time_value, volume_value, cycle_value, cycle_time_value = validate_inputs(
+            pwm_entry, time_entry, volume_entry, cycle_entry, cycle_time_value
+        )
+
+        # Send command
+        send_command(f"PROGRAM ({pwm_value}, {time_value}, {volume_value}, "
+                     f"{cycle_value}, {cycle_time_value})", status_label)
+
+        # Update status label
+        update_status(
+            status_label,
+            f"Program started with PWM: {pwm_value}, Time: {time_value}, Volume: {volume_value}, "
+            f"# \nCleaning cycles: {cycle_value}, Cleaning cycle duration: {cycle_time_value} (s)"
+        )
+    except ValueError as e:
+        update_status(status_label, f"ERROR - {e}")
+
+def send_command(command_list, status_label):
+    try:
+        print(f"Sending command: {command_list}")
+        arduino.write(f"{command_list}\n".encode())  # Write command to Arduino
+        update_status(status_label, f"Sent: {command_list}")
+        time.sleep(0.1)
+    except Exception as e:
+        print(f"Error sending command: {e}")
+        update_status(status_label, "Error sending command")
+
+def on_closing(window, status_label):
+    if arduinoConnected:
+        try:
+            send_command("STOP_MOTOR", status_label)
+            send_command("STOP", status_label)
+
+            arduino.close()  # Close the Arduino connection
+            print("Serial port closed.")
+        except Exception as e:
+            print(f"Error closing Arduino connection: {e}")
+    window.quit()
+    window.destroy()
+    sys.exit(0)
+
+
+def update_status(label, action):
+    label.configure(text=f"{action}")
+
+
+def slider_callback(value, label, entry):
+    try:
+        entry_value = int(entry.get().strip()) if entry.get().strip().isdigit() else cleaning_default
+    except Exception:
+        entry_value = cleaning_default
+    label.configure(text=f"Number of cleaning cycles: {int(value)}, Cycle duration: {entry_value} (s)")
+
+
+def update_label_and_store(label, slider, entry):
+    entry_value = update_label_from_entry(label, slider, entry)
+    cycle_time["entry_value"] = entry_value  # Store the returned value
+
+def update_label_from_entry(label, slider, entry):
+
+    try:
+        entry_value = int(entry.get().strip())
+    except ValueError:
+        entry.delete(0, "end")  # Clear the entry box
+        entry_value = cleaning_default  # Default value
+        entry.focus()
+
+    if entry_value <= 0:
+        entry_value = cleaning_default
+        entry.delete(0, "end")
+
+    slider_value = int(slider.get())
+    label.configure(
+        text=f"Number of cleaning cycles: {slider_value}, Cycle duration: {entry_value} (s)"
+    )
+    return entry_value
+
+
+def open_main_window():
+    window = ctk.CTk()
+    window.geometry("850x450")
+    window.title("Process Cycle Control Panel")
+    window.resizable(False, False)
+
+    frame_left = ctk.CTkFrame(master=window, width=500, height=400, corner_radius=10)
+    frame_left.grid(row=0, column=0, padx=10, pady=10, sticky="nsew")  # Attach to the left side
+
+    frame_right = ctk.CTkFrame(master=window, width=500, height=400, corner_radius=10)
+    frame_right.grid(row=0, column=1, padx=10, pady=10, sticky="nsew")  # Attach to the right side
+
+    actuator_label = ctk.CTkLabel(
+        master=frame_left, text="Manual Actuator Control", font=("Arial", 16, "bold"), anchor="center"
+    )
+    actuator_label.grid(row=0, column=0, padx=10, pady=5)
+
+    divider1 = ctk.CTkFrame(master=frame_left, height=2, fg_color="gray25")
+    divider1.grid(row=1, column=0, padx=20, pady=10, sticky="ew")
+
+    actuator_frame = ctk.CTkFrame(master=frame_left)
+    actuator_frame.grid(row=2, column=0, padx=10, pady=10, sticky="ew")
+
+    extend_button = ctk.CTkButton(
+        master=actuator_frame,
+        text="Extend Actuator",
+        command=lambda: send_command("EXTEND", status_label),
+        fg_color="#4CAF50",
+        hover_color="#45A049",
+        corner_radius=8,
+    )
+    extend_button.grid(row=0, column=0, padx=10, pady=5)
+
+    retract_button = ctk.CTkButton(
+        master=actuator_frame,
+        text="Retract Actuator",
+        command=lambda: send_command("RETRACT", status_label),
+        fg_color="#FF5722",
+        hover_color="#E64A19",
+        corner_radius=8,
+    )
+    retract_button.grid(row=0, column=1, padx=10, pady=5)
+
+    manual_motor_label = ctk.CTkLabel(
+        master=frame_left, text="Manual Motor Control", font=("Arial", 16, "bold"), anchor="center"
+    )
+    manual_motor_label.grid(row=3, column=0, padx=10, pady=5)
+
+    divider2 = ctk.CTkFrame(master=frame_left, height=2, fg_color="gray25")
+    divider2.grid(row=4, column=0, padx=20, pady=10, sticky="ew")
+
+    manual_entry_frame = ctk.CTkFrame(master=frame_left)
+    manual_entry_frame.grid(row=5, column=0, padx=10, pady=10, sticky="n")  # Use grid here instead of pack
+
+    # PWM entry
+    pwm_label_manual = ctk.CTkLabel(master=manual_entry_frame, text="PWM: ", font=("Arial", 12), anchor="w")
+    pwm_label_manual.grid(row=0, column=0, padx=5, pady=5, sticky="e")
+
+    pwm_entry_manual = ctk.CTkEntry(
+        master=manual_entry_frame, placeholder_text="Enter PWM Value (0-255)", width=200
+    )
+    pwm_entry_manual.grid(row=0, column=1, padx=5, pady=5)
+    set_button = ctk.CTkButton(
+        master=manual_entry_frame,
+        width=50,
+        text="Set",
+        command=lambda: send_command()
+    )
+    set_button.grid(row=0, column=1, padx=5, pady=5, sticky="e")
+
+
+
+
+    # Load the image using Pillow
+    image = Image.open("logo.png")  # Load the image with Pillow
+
+    logo_image = ctk.CTkImage(light_image=image, dark_image=image, size=(230,160))  # Create CTkImage with resized image
+
+    # Add the logo beneath the existing widgets
+    logo_label = ctk.CTkLabel(
+        master=frame_left, image=logo_image, text="", anchor="center"
+    )
+
+    logo_label.grid(row=6, column=0, padx=5, pady=10, sticky="nsew")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    cleaning_label = ctk.CTkLabel(
+        master=frame_right, text="CIP Setup", font=("Arial", 16, "bold"), anchor="center"
+    )
+    cleaning_label.pack(pady=(10, 0))
+
+    divider3 = ctk.CTkFrame(master=frame_right, height=2, fg_color="gray25")
+    divider3.pack(pady=10, fill="x", padx=20)
+
+    control_frame_clean = ctk.CTkFrame(master=frame_right)
+    control_frame_clean.pack(pady=10, padx=32, fill="x", expand=True)
+
+    entry_frame_right = ctk.CTkFrame(master=control_frame_clean)
+    entry_frame_right.grid(row=0, column=0, sticky="n")
+
+    cycle_label = ctk.CTkLabel(master=entry_frame_right, text="Number of Cleaning Cycles: ", font=("Arial", 12),
+                               anchor="w")
+    cycle_label.grid(row=0, column=0, padx=5, pady=5, sticky="e")
+
+    cycle_entry = ctk.CTkSlider(
+        master=entry_frame_right,
+        from_=1,
+        to=5,
+        command=lambda value: slider_callback(value, cycle_setup_label, cycle_time_entry)
+    )
+    cycle_entry.set(1)
+    cycle_entry.grid(row=0, column=1, padx=5, pady=5, sticky="e")
+
+    cycle_time_label = ctk.CTkLabel(master=entry_frame_right, text="Cleaning Cycle Length: ", font=("Arial", 12),
+                                    anchor="w")
+    cycle_time_label.grid(row=1, column=0, padx=5, pady=5, sticky="e")
+
+    cycle_time_entry = ctk.CTkEntry(
+        master=entry_frame_right, placeholder_text="Enter Cleaning Duration (s)", width=150
+    )
+    cycle_time_entry.grid(row=1, column=1, padx=5, pady=5, sticky="w")
+
+    set_button = ctk.CTkButton(
+        master=entry_frame_right,
+        width=50,
+        text="Set",
+        command=lambda: update_label_and_store(cycle_setup_label, cycle_entry, cycle_time_entry)
+    )
+    set_button.grid(row=1, column=1, padx=0, pady=5, sticky="e")
+
+    cycle_setup_label = ctk.CTkLabel(
+        master=entry_frame_right,
+        text=f"Number of cleaning cycles: 1, Cycle duration: {cleaning_default} (s)",
+        font=("Arial", 12),
+        anchor="n"
+    )
+    cycle_setup_label.grid(row=2, column=0, columnspan=3, padx=5, pady=5, sticky="w")
+
+    status_label = ctk.CTkLabel(
+        master=frame_right, text="Status: Ready", font=("Arial", 12), anchor="w"
+    )
+    status_label.pack(pady=(5, 2), padx=20, fill="x")
+
+    motor_label = ctk.CTkLabel(
+        master=frame_right, text="Process Control", font=("Arial", 14, "bold"), anchor="center"
+    )
+    motor_label.pack(pady=(20, 0))
+
+    divider4 = ctk.CTkFrame(master=frame_right, height=2, fg_color="gray25")
+    divider4.pack(pady=10, fill="x", padx=20)
+
+    control_frame_motor = ctk.CTkFrame(master=frame_right)
+    control_frame_motor.pack(pady=10, padx=10, fill="x")
+
+    entry_frame = ctk.CTkFrame(master=control_frame_motor)
+    entry_frame.grid(row=0, column=0, sticky="n")  # Align to the top
+
+    # PWM entry
+    pwm_label = ctk.CTkLabel(master=entry_frame, text="PWM: ", font=("Arial", 12), anchor="w")
+    pwm_label.grid(row=0, column=0, padx=5, pady=5, sticky="e")
+    pwm_entry = ctk.CTkEntry(
+        master=entry_frame, placeholder_text="Enter PWM Value (0-255)", width=200
+    )
+    pwm_entry.grid(row=0, column=1, padx=5, pady=5)
+
+    # Time entry
+    time_label = ctk.CTkLabel(master=entry_frame, text="Reaction Time: ", font=("Arial", 12), anchor="w")
+    time_label.grid(row=1, column=0, padx=5, pady=5, sticky="e")
+    time_entry = ctk.CTkEntry(
+        master=entry_frame, placeholder_text="Enter Reaction Time (s)", width=200
+    )
+    time_entry.grid(row=1, column=1, padx=5, pady=5)
+
+    # Volume entry
+    volume_label = ctk.CTkLabel(master=entry_frame, text="Solid Volume: ", font=("Arial", 12), anchor="w")
+    volume_label.grid(row=2, column=0, padx=5, pady=5, sticky="e")
+    volume_entry = ctk.CTkEntry(
+        master=entry_frame, placeholder_text="Enter Solid Volume (cm^3)", width=200
+    )
+    volume_entry.grid(row=2, column=1, padx=5, pady=5)
+
+    start_button = ctk.CTkButton(
+        master=control_frame_motor,
+        text="Start Program",
+        width=100,
+        height=90,
+        fg_color="#4CAF50",
+        hover_color="#45A049",
+        command=lambda: start_program(pwm_entry, time_entry, volume_entry,
+                                      cycle_entry, cycle_time["entry_value"], status_label)
+    )
+
+    start_button.grid(row=0, column=1, padx=(10, 0), pady=5, sticky="ns")
+
+    window.protocol("WM_DELETE_WINDOW", lambda: on_closing(window, status_label))
+
+    window.mainloop()
+
+
 arduinoConnected = False
-opt_menu = None
-status_label = None
-remembered = False
-pwm_1 = 255
-reverse = 1
 
-# Set appearance and theme
-customtkinter.set_appearance_mode("dark")  # Mode
-customtkinter.set_default_color_theme("green")  # Theme
+# Appearance and theme
+ctk.set_appearance_mode("dark")
+ctk.set_default_color_theme("dark-blue")
 
 try:
     print("Connecting to Arduino")
@@ -24,219 +337,5 @@ try:
 except Exception as e:
     print(f"Failed to connect to Arduino: {e}")
 
-# Functions
-def rpm_conv(value):
-    approx_rpm = int(rpm_max * value)
-    if approx_rpm < 50:
-        approx_rpm = 0
-    return approx_rpm
+open_main_window()
 
-def slider_callback(value, motorID):
-        approx_rpm = rpm_conv(value)
-        pwm_value = int(value * 255)
-        send_command(f"SET_PWM_{motorID} {pwm_value}")
-        status_label.configure(text=f"RPM: {approx_rpm}")
-    
-def send_command(command):
-    try:
-        print(f"Sending command: {command}")
-        arduino.write(f"{command}\n".encode())  # Send command to Arduino
-        time.sleep(0.1)
-    except Exception as e:
-        print(f"Error sending command: {e}")
-
-def on_closing(window):
-    if arduinoConnected:
-        try:
-            send_command("SET_PWM_1 0")
-            send_command("SET_PWM_2 0")# Stop the motor
-            arduino.close()  # Close the Arduino connection
-            print("Serial port closed.")
-        except Exception as e:
-            print(f"Error closing Arduino connection: {e}")
-    window.quit()
-    window.destroy()
-    sys.exit(0)
-
-def on_closing_sub(window):
-    window.quit()
-    window.destroy() 
-    
-    
-def start_motor(pwm_entry,reverse_checkbox,motorID):
-    # Get the PWM value from the entry
-    pwm_value = pwm_entry.get().strip()  # Remove any surrounding whitespace
-    
-    # Default to 255 if the entry is empty
-    if not pwm_value:
-        pwm_value = 255
-    else:
-        # Try to convert to an integer and validate
-        try:
-            pwm_value = int(pwm_value)
-            if pwm_value < 0 or pwm_value > 255:
-                raise ValueError  # Raise error if out of range
-        except ValueError:
-            print("Error: Invalid input. Please enter a number between 0 and 255.")
-            return
-    
-    # Adjust PWM value if reversing direction
-    if reverse_checkbox.get():
-        pwm_value = -pwm_value  # Reverse the value if checked
-    send_command(f"SET_PWM_{motorID} {pwm_value}")
-
-    
-def run_config(motorID):
-    config_window = customtkinter.CTk()
-    config_window.geometry("300x250")
-    config_window.title("Set RPM")
-
-    # Frame setup
-    configframe = customtkinter.CTkFrame(master=config_window)
-    configframe.pack(pady=20, padx=60, fill="both", expand=True)
-
-    # Add a label for PWM entry
-    pwm_label = customtkinter.CTkLabel(master=configframe, text="Enter PWM Value (0-255):")
-    pwm_label.pack(pady=10)
-    
-    # Add text entry box for PWM input
-    pwm_entry = customtkinter.CTkEntry(master=configframe, placeholder_text="PWM Value")
-    pwm_entry.pack(pady=10)
-    
-    reverse_checkbox = customtkinter.CTkCheckBox(master=configframe, text="Reverse direction")
-    reverse_checkbox.pack(pady=10)
-    
-    # Add a start button to send the PWM value
-    startbutton = customtkinter.CTkButton(master=configframe, text="Start", command=lambda: start_motor(pwm_entry,reverse_checkbox,motorID))
-    startbutton.pack(pady=10)
-
-    # Close protocol
-    config_window.protocol("WM_DELETE_WINDOW", lambda: on_closing_sub(config_window))
-    config_window.mainloop()
-    
-# Verify login credentials
-def verify_login(entry_username, entry_password, login_win, whitelist_file):
-    username = entry_username.get()
-    password = entry_password.get()
-
-    # Read the whitelist file
-    try:
-        with open(whitelist_file, 'r') as file:
-            whitelist = file.readlines()
-
-        # Check if username and password match any entry
-        for entry in whitelist:
-            entry_user, entry_pass = entry.strip().split(",")
-            if username == entry_user and password == entry_pass:
-                print("Access granted")
-                login_win.destroy()  # Close login window
-                open_main_window()   # Open main control window
-                return
-            
-        print("Wrong")
-
-    except Exception as e:
-        print(f"Error reading whitelist: {e}")
-        
-        
-def login_guest(entry_username, entry_password, login_win, whitelist_file):
-    # Read the whitelist file
-    try:
-        with open(whitelist_file, 'r') as file:
-            whitelist = file.readlines()
-
-        # Check if username and password match any entry
-        for entry in whitelist:
-            entry_user, entry_pass = entry.strip().split(",")
-            if entry_username == entry_user and entry_password == entry_pass:
-                print("Access granted")
-                login_win.destroy()  # Close login window
-                open_main_window()   # Open main control window
-                return
-            
-        print("Wrong")
-
-    except Exception as e:
-        print(f"Error reading whitelist: {e}")
-    
-# Main motor/servo control window
-def open_main_window():
-    global opt_menu, status_label, pwm_1
-    # GUI setup
-    window = customtkinter.CTk()
-    window.geometry("600x550")
-    window.title("Motor and Servo Controller")
-
-    # Frame setup
-    frame = customtkinter.CTkFrame(master=window)
-    frame.pack(pady=20, padx=60, fill="both", expand=True)
-
-    # Slider for motor/servo control
-    slider_1 = customtkinter.CTkSlider(master=frame, from_=-1, to=1, command=lambda value: slider_callback(value, motorID=1))
-    slider_1.pack(pady=20, padx=10)
-    
-
-    slider_2 = customtkinter.CTkSlider(master=frame, from_=-1, to=1, command=lambda value: slider_callback(value, motorID=2))
-    slider_2.pack(pady=20, padx=10)
-    # Slider status label
-    status_label = customtkinter.CTkLabel(master=frame, text="Current RPM: 0")
-    status_label.pack(pady=10)
-
-    startbutton = customtkinter.CTkButton(master=frame, text="Default run", command=lambda: send_command(f"SET_PWM_1 {pwm_1}"))
-    startbutton.pack(pady=10)
-        
-    program_1 = customtkinter.CTkButton(master=frame, text="Options", command=lambda: run_config(1))   # Window close protocol
-    program_1.pack(pady=10)
-    
-    cleanbutton = customtkinter.CTkButton(master=frame, text="Default run", command=lambda: send_command(f"SET_PWM_1 {pwm_1}"))
-    cleanbutton.pack(pady=10)
-        
-    program_2 = customtkinter.CTkButton(master=frame, text="Options", command=lambda: run_config(1))   # Window close protocol
-    program_2.pack(pady=10)
-    
-    
-    
-    
-    
-    
-    
-    window.protocol("WM_DELETE_WINDOW", lambda: on_closing(window))
-
-    # Run main loop
-    window.mainloop()
-
-# Login window function
-def open_login_window():
-    # Creating login window
-    login_win = customtkinter.CTk()  # Initialize login window
-    login_win.geometry("300x350")
-    login_win.title("Group 8 Industries - Login")
-
-    # Username entry
-    entry_username = customtkinter.CTkEntry(master=login_win, placeholder_text="Enter Username")
-    entry_username.pack(pady=10)
-
-    # Password entry
-    entry_password = customtkinter.CTkEntry(master=login_win, placeholder_text="Enter Password", show="*")
-    entry_password.pack(pady=10)
-
-    # Error label
-    label_error = customtkinter.CTkLabel(master=login_win, text="")
-    label_error.pack()
-
-    remember_me = customtkinter.CTkCheckBox(master=login_win, text="Remember Me")
-    remember_me.pack()
-    # Login button
-    filepath = "arduino_whitelist.txt"
-    login_button = customtkinter.CTkButton(master=login_win, text="Login",
-                                           command=lambda: verify_login(entry_username, entry_password, login_win,filepath))
-    login_button.pack(pady=20)
-    
-    login_guest_button = customtkinter.CTkButton(master=login_win, text="Login as guest",
-                                           command=lambda: login_guest("guest", "admin", login_win,filepath))
-    login_guest_button.pack(pady=20)
-    
-    login_win.protocol("WM_DELETE_WINDOW", lambda: on_closing(login_win))    # Run login loop
-    login_win.mainloop()
-
-open_login_window()
